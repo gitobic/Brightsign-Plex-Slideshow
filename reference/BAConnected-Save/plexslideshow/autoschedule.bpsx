@@ -1,0 +1,33 @@
+{
+  "schedulePresentations": {
+    "schedulePresentationsById": {
+      "7b1cfd14-074b-4000-aff9-45ebadd6f000": {
+        "id": "7b1cfd14-074b-4000-aff9-45ebadd6f000",
+        "presentationLocator": {
+          "name": "plexslideshow.bpfx",
+          "path": "/Projects/Brightsign-Plex-Slideshow/reference/BAConnected-Save/plexslideshow/",
+          "networkId": 0,
+          "location": "Local",
+          "assetType": "Project",
+          "scope": "55c19ba18ddeb770"
+        },
+        "dateTime": "2026-06-06T00:00:00.000Z",
+        "duration": 1440,
+        "allDayEveryDay": true,
+        "recurrence": false,
+        "recurrencePattern": "AllDays",
+        "recurrencePatternDaysOfWeek": 127,
+        "recurrenceStartDate": "1970-01-01T00:00:00.000Z",
+        "recurrenceGoesForever": true,
+        "recurrenceEndDate": "2100-12-31T23:59:59.999Z",
+        "interruption": false
+      }
+    },
+    "allSchedulePresentations": [
+      "7b1cfd14-074b-4000-aff9-45ebadd6f000"
+    ]
+  },
+  "modifiedTime": {
+    "lastModifiedTime": "2026-06-06T21:53:35.468Z"
+  }
+}

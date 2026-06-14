@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1920">
+<style>
+
+/* ── Reset ── */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  background: #000;
+  font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* ── Slide container ── */
+#container {
+  position: relative;
+  width: 1920px;
+  height: 1080px;
+}
+
+/* ── Individual slides (double-buffered: A and B) ── */
+.slide {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 1.5s ease-in-out;
+}
+.slide.active { opacity: 1; }
+
+.slide img {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+/* ── Ken Burns keyframes (8 directions) ── */
+@keyframes kb-pan-right   { from { transform: scale(1.25) translate(-6%,  0%); } to { transform: scale(1.10) translate( 6%,  0%); } }
+@keyframes kb-pan-left    { from { transform: scale(1.25) translate( 6%,  0%); } to { transform: scale(1.10) translate(-6%,  0%); } }
+@keyframes kb-pan-down    { from { transform: scale(1.25) translate( 0%, -6%); } to { transform: scale(1.10) translate( 0%,  6%); } }
+@keyframes kb-pan-up      { from { transform: scale(1.25) translate( 0%,  6%); } to { transform: scale(1.10) translate( 0%, -6%); } }
+@keyframes kb-diag-tl-br  { from { transform: scale(1.25) translate(-5%, -5%); } to { transform: scale(1.10) translate( 5%,  5%); } }
+@keyframes kb-diag-tr-bl  { from { transform: scale(1.25) translate( 5%, -5%); } to { transform: scale(1.10) translate(-5%,  5%); } }
+@keyframes kb-diag-bl-tr  { from { transform: scale(1.25) translate(-5%,  5%); } to { transform: scale(1.10) translate( 5%, -5%); } }
+@keyframes kb-diag-br-tl  { from { transform: scale(1.25) translate( 5%,  5%); } to { transform: scale(1.10) translate(-5%, -5%); } }
+
+/* ── Plex corner badge ── */
+#plex-badge {
+  position: fixed;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 10px 14px;
+  max-width: 320px;
+  min-width: 160px;
+  pointer-events: none;
+  transition: opacity 0.6s ease;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+#plex-badge.hidden      { opacity: 0; }
+#plex-badge.corner-fade { opacity: 0 !important; }
+
+.plex-thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+  display: none;
+}
+.plex-thumb.visible { display: block; }
+
+.plex-info { flex: 1; min-width: 0; }
+
+.plex-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 4px;
+}
+.plex-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #e5a00d;
+  flex-shrink: 0;
+}
+.plex-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #e5a00d;
+  text-transform: uppercase;
+}
+.plex-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+.plex-sub {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.65);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+  line-height: 1.3;
+}
+
+/* ── Error overlay ── */
+#error-msg {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  color: rgba(255,255,255,0.4);
+  font-size: 11px;
+  z-index: 200;
+}
+
+</style>
+</head>
+<body>
+
+<div id="container">
+  <div class="slide" id="slide-a"><img id="img-a" src="" alt=""></div>
+  <div class="slide" id="slide-b"><img id="img-b" src="" alt=""></div>
+</div>
+
+<div id="plex-badge" class="hidden">
+  <img id="plex-thumb" class="plex-thumb" alt="">
+  <div class="plex-info">
+    <div class="plex-eyebrow">
+      <div class="plex-dot"></div>
+      <span class="plex-label">Now Playing</span>
+    </div>
+    <div class="plex-title" id="plex-title"></div>
+    <div class="plex-sub"   id="plex-sub"></div>
+  </div>
+</div>
+
+<div id="error-msg"></div>
+
+<script>
+'use strict';
+
+// ── Configuration ────────────────────────────────────────────────────────────
+const CFG = {
+  nasBase:            'http://192.168.XXX.XXX:9001',
+  durationMin:        10,      // seconds per image (minimum)
+  durationMax:        20,      // seconds per image (maximum)
+  crossfade:          1.5,     // crossfade overlap in seconds
+  plexPollMs:         30000,   // how often to check plex-status.json
+  plexScale:          3.0,     // badge size: 1.0 = compact, 1.5-2.0 = TV-readable
+  plexCornerRotateMs: 300000   // move badge to next corner every 5 min (burn-in prevention)
+};
+
+const KB_ANIMS = [
+  'kb-pan-right', 'kb-pan-left', 'kb-pan-down',   'kb-pan-up',
+  'kb-diag-tl-br','kb-diag-tr-bl','kb-diag-bl-tr','kb-diag-br-tl'
+];
+
+// Corners cycle clockwise: top-right → bottom-right → bottom-left → top-left
+const CORNERS = [
+  { top: '24px', right: '24px', bottom: '',     left: '',     origin: 'top right'    },
+  { top: '',     right: '24px', bottom: '24px', left: '',     origin: 'bottom right' },
+  { top: '',     right: '',     bottom: '24px', left: '24px', origin: 'bottom left'  },
+  { top: '24px', right: '',     bottom: '',     left: '24px', origin: 'top left'     },
+];
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let images       = [];
+let imgIndex     = 0;
+let activeSlot   = 'a';
+let slideTimeout = null;
+let cornerIdx    = 0;
+
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+const slideA    = document.getElementById('slide-a');
+const slideB    = document.getElementById('slide-b');
+const imgA      = document.getElementById('img-a');
+const imgB      = document.getElementById('img-b');
+const badge     = document.getElementById('plex-badge');
+const plexThumb = document.getElementById('plex-thumb');
+const plexTitle = document.getElementById('plex-title');
+const plexSub   = document.getElementById('plex-sub');
+const errorMsg  = document.getElementById('error-msg');
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function rand(min, max) { return Math.random() * (max - min) + min; }
+
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function nextImage() {
+  const name = images[imgIndex];
+  imgIndex = (imgIndex + 1) % images.length;
+  if (imgIndex === 0) images = shuffle(images);
+  return CFG.nasBase + '/images/' + encodeURIComponent(name);
+}
+
+// ── Badge corner positioning ──────────────────────────────────────────────────
+function applyCorner(idx) {
+  const c = CORNERS[idx];
+  badge.style.top    = c.top;
+  badge.style.right  = c.right;
+  badge.style.bottom = c.bottom;
+  badge.style.left   = c.left;
+  badge.style.transformOrigin = c.origin;
+}
+
+function rotateCorner() {
+  badge.classList.add('corner-fade');
+  setTimeout(() => {
+    cornerIdx = (cornerIdx + 1) % CORNERS.length;
+    applyCorner(cornerIdx);
+    badge.classList.remove('corner-fade');
+  }, 700);
+}
+
+// ── Ken Burns ─────────────────────────────────────────────────────────────────
+function applyKenBurns(imgEl, durationSec) {
+  const anim = KB_ANIMS[Math.floor(Math.random() * KB_ANIMS.length)];
+  imgEl.style.animation = 'none';
+  void imgEl.offsetHeight;
+  imgEl.style.animation = `${anim} ${durationSec}s linear forwards`;
+}
+
+// ── Slide sequencer ───────────────────────────────────────────────────────────
+function showNext() {
+  const url      = nextImage();
+  const duration = rand(CFG.durationMin, CFG.durationMax);
+
+  const nextSlot  = activeSlot === 'a' ? 'b' : 'a';
+  const curSlide  = activeSlot === 'a' ? slideA : slideB;
+  const nxtSlide  = nextSlot  === 'a' ? slideA : slideB;
+  const nxtImg    = nextSlot  === 'a' ? imgA   : imgB;
+
+  nxtImg.onerror = () => {
+    clearTimeout(slideTimeout);
+    slideTimeout = setTimeout(showNext, 400);
+  };
+
+  nxtImg.onload = () => {
+    applyKenBurns(nxtImg, duration);
+    nxtSlide.classList.add('active');
+    setTimeout(() => curSlide.classList.remove('active'), CFG.crossfade * 1000);
+    activeSlot = nextSlot;
+    slideTimeout = setTimeout(showNext, (duration - CFG.crossfade) * 1000);
+  };
+
+  nxtImg.src = url;
+}
+
+// ── Manifest loader ───────────────────────────────────────────────────────────
+async function loadManifest() {
+  try {
+    const r = await fetch(CFG.nasBase + '/images.json?t=' + Date.now());
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    if (!Array.isArray(data) || data.length === 0) throw new Error('empty manifest');
+    images   = shuffle(data);
+    imgIndex = 0;
+    showNext();
+    errorMsg.textContent = '';
+  } catch (e) {
+    errorMsg.textContent = 'Manifest error: ' + e.message + ' — retrying in 10s';
+    setTimeout(loadManifest, 10000);
+  }
+}
+
+// ── Plex badge ────────────────────────────────────────────────────────────────
+async function pollPlex() {
+  try {
+    const r = await fetch(CFG.nasBase + '/plex-status.json?t=' + Date.now());
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+
+    if (d && d.title) {
+      plexTitle.textContent = d.title;
+
+      if (d.type === 'track') {
+        plexSub.textContent = [d.artist, d.album].filter(Boolean).join(' · ');
+      } else if (d.type === 'episode') {
+        plexSub.textContent = [d.show, d.season].filter(Boolean).join(' · ');
+      } else if (d.type === 'movie') {
+        plexSub.textContent = d.year ? String(d.year) : '';
+      } else {
+        plexSub.textContent = d.subtitle || '';
+      }
+
+      if (d.thumb) {
+        plexThumb.src = d.thumb;
+        plexThumb.classList.add('visible');
+      } else {
+        plexThumb.src = '';
+        plexThumb.classList.remove('visible');
+      }
+
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
+  } catch (_) {
+    badge.classList.add('hidden');
+  }
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+applyCorner(0);
+badge.style.transform = `scale(${CFG.plexScale})`;
+setInterval(rotateCorner, CFG.plexCornerRotateMs);
+
+loadManifest();
+pollPlex();
+setInterval(pollPlex, CFG.plexPollMs);
+
+</script>
+</body>
+</html>
