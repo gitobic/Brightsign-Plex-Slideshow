@@ -1,4 +1,7 @@
-# Brightsign-Plex-Slideshow
+![Top Image](reference/screenshots/title.png)
+
+
+# Brightsign Plex Slideshow
 Repurposing an old Brightsign into a personal screensaver with Plex integration
 
 **Why**  
